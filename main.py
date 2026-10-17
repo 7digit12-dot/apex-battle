@@ -26,6 +26,11 @@ class UserAuth(BaseModel):
     password: str
     username: str | None = None
 
+class GoogleAuthRequest(BaseModel):
+    email: str
+    username: str | None = None
+    id_token: str | None = None
+
 class BankDetailsUpdate(BaseModel):
     user_id: str
     upi_id: str
@@ -131,6 +136,65 @@ def login_account(user: UserAuth):
         "message": "Login successful",
         "user": user_db
     }
+
+@app.post("/api/auth/google")
+def google_auth(payload: GoogleAuthRequest):
+    try:
+        user_email = payload.email.lower().strip()
+        user_name = payload.username or user_email.split("@")[0]
+
+        # 1. MongoDB me check karo user pehle se hai ya nahi
+        user = users_collection.find_one({"email": user_email})
+
+        if not user:
+            # 2. Agar bilkul naya user hai, standard schema ke sath MongoDB me register karo
+            total_users = users_collection.count_documents({}) + 1
+            app_serial_id = str(total_users).zfill(5)
+
+            new_user = {
+                "app_serial_id": app_serial_id,
+                "email": user_email,
+                "password": "",  # Google OAuth users ke liye raw password empty
+                "auth_type": "google",
+                "username": user_name,
+                "game_uid": "Not Set",
+                "bank_details": {
+                    "payout_type": "UPI",
+                    "upi_id": "Not Set",
+                    "account_number": "Not Set",
+                    "ifsc_code": "Not Set"
+                },
+                "socials": {
+                    "youtube": "@ApexBattle",
+                    "instagram": "@apex_player"
+                },
+                "wallet_balance": 100,
+                "total_earned": 0,
+                "created_at": datetime.utcnow().isoformat()
+            }
+            res = users_collection.insert_one(new_user)
+            if not res.inserted_id:
+                raise HTTPException(status_code=500, detail="Database insertion failed!")
+
+            user_id = str(res.inserted_id)
+        else:
+            # 3. Existing user ki actual MongoDB details
+            user_id = str(user["_id"])
+            user_name = user.get("username", user_name)
+
+        # 4. Success response Flutter ke liye
+        return {
+            "status": "success",
+            "message": "Google authentication successful",
+            "user_id": user_id,
+            "email": user_email,
+            "username": user_name,
+            "token": f"bearer_{user_id}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.get("/api/user/profile/{user_id}")
 def fetch_user_profile(user_id: str):
