@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from bson import ObjectId
@@ -28,7 +28,10 @@ class UserAuth(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     email: str
+    game_uid: str
+    password: str
     username: str | None = None
+    avatar: str | None = None
     id_token: str | None = None
 
 class BankDetailsUpdate(BaseModel):
@@ -83,24 +86,25 @@ def test_db():
     }
 
 # ---------------------------------------------------------------------------
-# 3. AUTHENTICATION & SINGLE-PROFILE ROUTES (Diary Note Structure)
+# 3. AUTHENTICATION & PROFILE ROUTES
 # ---------------------------------------------------------------------------
 @app.post("/api/auth/register")
 def register_account(user: UserAuth):
-    existing = users_collection.find_one({"email": user.email})
+    existing = users_collection.find_one({"email": user.email.lower().strip()})
     if existing:
         raise HTTPException(status_code=400, detail="Account pehle se bana hua hai!")
 
-    # 5-digit formatted serial App ID auto generate
     total_users = users_collection.count_documents({}) + 1
     app_serial_id = str(total_users).zfill(5)
 
     new_user = {
         "app_serial_id": app_serial_id,
-        "email": user.email,
+        "email": user.email.lower().strip(),
         "password": user.password,
         "username": user.username or f"Player_{app_serial_id}",
         "game_uid": "Not Set",
+        "auth_type": "standard",
+        "avatar": "",
         "bank_details": {
             "payout_type": "UPI",
             "upi_id": "Not Set",
@@ -125,7 +129,8 @@ def register_account(user: UserAuth):
 
 @app.post("/api/auth/login")
 def login_account(user: UserAuth):
-    user_db = users_collection.find_one({"email": user.email, "password": user.password})
+    user_email = user.email.lower().strip()
+    user_db = users_collection.find_one({"email": user_email, "password": user.password})
     if not user_db:
         raise HTTPException(status_code=401, detail="Galat Email ya Password!")
 
@@ -141,23 +146,30 @@ def login_account(user: UserAuth):
 def google_auth(payload: GoogleAuthRequest):
     try:
         user_email = payload.email.lower().strip()
+        user_pwd = payload.password.strip()
+        incoming_uid = payload.game_uid.strip()
+
+        if not user_pwd or not incoming_uid:
+            raise HTTPException(status_code=400, detail="UID aur Password dono compulsory hain!")
+
         user_name = payload.username or user_email.split("@")[0]
 
-        # 1. MongoDB me check karo user pehle se hai ya nahi
+        # 1. MongoDB me check karo
         user = users_collection.find_one({"email": user_email})
 
         if not user:
-            # 2. Agar bilkul naya user hai, standard schema ke sath MongoDB me register karo
+            # 2. Agar bilkul naya user hai, MongoDB me pura data insert karo
             total_users = users_collection.count_documents({}) + 1
             app_serial_id = str(total_users).zfill(5)
 
             new_user = {
                 "app_serial_id": app_serial_id,
                 "email": user_email,
-                "password": "",  # Google OAuth users ke liye raw password empty
-                "auth_type": "google",
+                "password": user_pwd,
+                "auth_type": "google_hybrid",
                 "username": user_name,
-                "game_uid": "Not Set",
+                "game_uid": incoming_uid,
+                "avatar": payload.avatar or "",
                 "bank_details": {
                     "payout_type": "UPI",
                     "upi_id": "Not Set",
@@ -177,18 +189,32 @@ def google_auth(payload: GoogleAuthRequest):
                 raise HTTPException(status_code=500, detail="Database insertion failed!")
 
             user_id = str(res.inserted_id)
+            current_app_serial = app_serial_id
+            current_game_uid = incoming_uid
         else:
-            # 3. Existing user ki actual MongoDB details
+            # 3. Existing user hai toh password aur UID update/sync karo
             user_id = str(user["_id"])
+            current_app_serial = user.get("app_serial_id", "00001")
+            
+            update_data = {"password": user_pwd}
+            if incoming_uid and incoming_uid != "Not Set":
+                update_data["game_uid"] = incoming_uid
+                current_game_uid = incoming_uid
+            else:
+                current_game_uid = user.get("game_uid", "Not Set")
+
+            users_collection.update_one({"_id": user["_id"]}, {"$set": update_data})
             user_name = user.get("username", user_name)
 
-        # 4. Success response Flutter ke liye
+        # 4. Response
         return {
             "status": "success",
-            "message": "Google authentication successful",
+            "message": "User registered in MongoDB with Password & UID",
             "user_id": user_id,
             "email": user_email,
             "username": user_name,
+            "game_uid": current_game_uid,
+            "app_serial_id": current_app_serial,
             "token": f"bearer_{user_id}"
         }
     except HTTPException:
@@ -249,7 +275,7 @@ def update_socials(data: SocialsUpdate):
         raise HTTPException(status_code=400, detail=str(e))
 
 # ---------------------------------------------------------------------------
-# 4. TOURNAMENT ENGINE & AUTO-COPY REGISTRATION (Shortcut Flow)
+# 4. TOURNAMENT ENGINE & PERSISTENCE
 # ---------------------------------------------------------------------------
 @app.post("/api/tournaments/create")
 def create_tournament(tourney: TournamentCreate):
@@ -271,9 +297,17 @@ def create_tournament(tourney: TournamentCreate):
     return {"status": "success", "tournament_id": str(res.inserted_id)}
 
 @app.get("/api/tournaments")
-def get_all_tournaments():
+def get_all_tournaments(user_id: str | None = Query(None)):
     tournaments = []
     for doc in tournaments_collection.find({}):
+        # Check persistence for current user
+        user_registration = None
+        if user_id:
+            for team in doc.get("registered_teams", []):
+                if str(team.get("user_id")) == str(user_id):
+                    user_registration = team
+                    break
+
         tournaments.append({
             "id": str(doc["_id"]),
             "title": doc.get("title", "APEX SOLO BR"),
@@ -284,7 +318,9 @@ def get_all_tournaments():
             "max_slots": doc.get("max_slots", 50),
             "slots_booked": doc.get("slots_booked", 0),
             "match_time": doc.get("match_time", ""),
-            "status": doc.get("status", "UPCOMING")
+            "status": doc.get("status", "UPCOMING"),
+            "is_registered": user_registration is not None,
+            "my_slot": user_registration.get("slot_number") if user_registration else None
         })
     return {"tournaments": tournaments}
 
@@ -296,7 +332,7 @@ def register_tournament_slot(reg: TournamentRegistration):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid ID format.")
 
-    # 1. User profile se saara data auto-fetch karo
+    # 1. User profile se data fetch karo
     user = users_collection.find_one({"_id": u_oid})
     if not user:
         raise HTTPException(status_code=404, detail="Player profile nahi mili!")
@@ -312,15 +348,15 @@ def register_tournament_slot(reg: TournamentRegistration):
     if slots_booked >= slots_total:
         raise HTTPException(status_code=400, detail="Lobby full ho chuki hai!")
 
-    # Prevent duplicate entry in same room
+    # Duplicate check
     for participant in tourney.get("registered_teams", []):
         if participant.get("user_id") == str(u_oid):
             raise HTTPException(status_code=400, detail="Aap pehle se is match me register hain!")
 
-    # 3. Next auto-slot calculate karo
+    # 3. Next slot calculate
     allotted_slot = slots_booked + 1
 
-    # 4. Complete auto-bind snapshot (Diary Note requirement)
+    # 4. Bind snapshot
     slot_entry = {
         "slot_number": allotted_slot,
         "user_id": str(u_oid),
@@ -348,7 +384,7 @@ def register_tournament_slot(reg: TournamentRegistration):
     }
 
 # ---------------------------------------------------------------------------
-# 5. ROOM CREDENTIALS (Admin Update & User 15-Min Safe Fetch)
+# 5. ROOM CREDENTIALS
 # ---------------------------------------------------------------------------
 @app.post("/api/tournaments/set-room")
 def set_room_credentials(payload: RoomCredentialsUpdate):
@@ -378,7 +414,6 @@ def get_room_details(tournament_id: str, user_id: str):
     if not tourney:
         raise HTTPException(status_code=404, detail="Tournament nahi mila!")
 
-    # Check if user is in registered_teams
     registered = any(team.get("user_id") == user_id for team in tourney.get("registered_teams", []))
     if not registered:
         return {"status": "locked", "message": "Pehle match register karein tabhi Room ID unlock hogi."}
