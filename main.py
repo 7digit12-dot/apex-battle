@@ -3,13 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from datetime import datetime
+from typing import Optional
 
 # Local database import
 from database import db, users_collection, tournaments_collection
 
 app = FastAPI(title="Apex Battle Esports API")
 
-# Enable CORS for Flutter Web & Mobile
+# Enable CORS for Flutter Web & Mobile & Admin Dashboard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,22 +52,33 @@ class SocialsUpdate(BaseModel):
 
 class TournamentCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=50)
+    mode: str = Field(default="SOLO")
     game_mode: str = Field(default="SOLO")
     map_name: str = Field(default="Bermuda")
-    entry_fee: int = Field(default=15, ge=0)
-    prize_pool: int = Field(default=520, ge=0)
-    max_slots: int = Field(default=50, ge=2, le=100)
-    match_time: str = Field(default="10:00 AM")
+    room_code: str = Field(default="ROOM-101")
+    entry_fee: int = Field(default=19, ge=0)
+    prize_pool: int = Field(default=349, ge=0)
+    slots_total: Optional[int] = None
+    max_slots: Optional[int] = None
+    match_time: str = Field(default="")
 
 class TournamentRegistration(BaseModel):
     tournament_id: str
     user_id: str
     utr: str
+    slot_number: Optional[int] = None
 
 class RoomCredentialsUpdate(BaseModel):
     tournament_id: str
     room_id: str
     room_password: str
+
+class HackerReportCreate(BaseModel):
+    reporter_id: str = ""
+    app_serial_id: str = "00001"
+    target_uid: str
+    room_code: str
+    reason: str = ""
 
 # ---------------------------------------------------------------------------
 # 2. CORE & HEALTH ENDPOINTS
@@ -154,11 +166,9 @@ def google_auth(payload: GoogleAuthRequest):
 
         user_name = payload.username or user_email.split("@")[0]
 
-        # 1. MongoDB me check karo
         user = users_collection.find_one({"email": user_email})
 
         if not user:
-            # 2. Agar bilkul naya user hai, MongoDB me pura data insert karo
             total_users = users_collection.count_documents({}) + 1
             app_serial_id = str(total_users).zfill(5)
 
@@ -192,7 +202,6 @@ def google_auth(payload: GoogleAuthRequest):
             current_app_serial = app_serial_id
             current_game_uid = incoming_uid
         else:
-            # 3. Existing user hai toh password aur UID update/sync karo
             user_id = str(user["_id"])
             current_app_serial = user.get("app_serial_id", "00001")
             
@@ -206,7 +215,6 @@ def google_auth(payload: GoogleAuthRequest):
             users_collection.update_one({"_id": user["_id"]}, {"$set": update_data})
             user_name = user.get("username", user_name)
 
-        # 4. Response
         return {
             "status": "success",
             "message": "User registered in MongoDB with Password & UID",
@@ -275,32 +283,53 @@ def update_socials(data: SocialsUpdate):
         raise HTTPException(status_code=400, detail=str(e))
 
 # ---------------------------------------------------------------------------
-# 4. TOURNAMENT ENGINE & PERSISTENCE
+# 4. TOURNAMENT ENGINE (FLUTTER + ADMIN DUAL ROUTING)
 # ---------------------------------------------------------------------------
-@app.post("/api/tournaments/create")
-def create_tournament(tourney: TournamentCreate):
+def _process_create_tournament(tourney: TournamentCreate):
+    mode_val = (tourney.mode or tourney.game_mode or "SOLO").upper()
+    
+    if tourney.slots_total:
+        slots = tourney.slots_total
+    elif tourney.max_slots:
+        slots = tourney.max_slots
+    else:
+        slots = 12 if mode_val == "SQUAD" else (24 if mode_val == "DUO" else (8 if mode_val == "CS" else 48))
+
+    match_time_val = tourney.match_time
+    if not match_time_val:
+        match_time_val = datetime.utcnow().isoformat()
+
     record = {
         "title": tourney.title,
-        "game_mode": tourney.game_mode,
+        "mode": mode_val,
+        "game_mode": mode_val,
         "map_name": tourney.map_name,
+        "room_code": tourney.room_code.upper() if tourney.room_code else "ROOM-101",
         "entry_fee": tourney.entry_fee,
         "prize_pool": tourney.prize_pool,
-        "max_slots": tourney.max_slots,
+        "slots_total": slots,
+        "max_slots": slots,
         "slots_booked": 0,
         "registered_teams": [],
-        "match_time": tourney.match_time,
+        "match_time": match_time_val,
         "status": "UPCOMING",
-        "room_id": "",
-        "room_password": ""
+        "room_id": "TBD",
+        "room_password": "TBD",
+        "created_at": datetime.utcnow().isoformat()
     }
     res = tournaments_collection.insert_one(record)
-    return {"status": "success", "tournament_id": str(res.inserted_id)}
+    return {"status": "success", "tournament_id": str(res.inserted_id), "id": str(res.inserted_id)}
+
+# Supports both /api/tournaments/create and /api/admin/tournament/create
+@app.post("/api/tournaments/create")
+@app.post("/api/admin/tournament/create")
+def create_tournament_endpoint(tourney: TournamentCreate):
+    return _process_create_tournament(tourney)
 
 @app.get("/api/tournaments")
 def get_all_tournaments(user_id: str | None = Query(None)):
     tournaments = []
     for doc in tournaments_collection.find({}):
-        # Check persistence for current user
         user_registration = None
         if user_id:
             for team in doc.get("registered_teams", []):
@@ -308,21 +337,31 @@ def get_all_tournaments(user_id: str | None = Query(None)):
                     user_registration = team
                     break
 
+        mode_name = (doc.get("mode") or doc.get("game_mode") or "SOLO").upper()
+        total_slots = doc.get("slots_total") or doc.get("max_slots") or 48
+
         tournaments.append({
             "id": str(doc["_id"]),
-            "title": doc.get("title", "APEX SOLO BR"),
-            "game_mode": doc.get("game_mode", "SOLO"),
+            "_id": str(doc["_id"]),
+            "room_code": doc.get("room_code", "ROOM-101"),
+            "roomCode": doc.get("room_code", "ROOM-101"),
+            "title": doc.get("title", f"APEX {mode_name} BATTLE"),
+            "mode": mode_name,
+            "game_mode": mode_name,
             "map_name": doc.get("map_name", "Bermuda"),
-            "entry_fee": doc.get("entry_fee", 15),
-            "prize_pool": doc.get("prize_pool", 520),
-            "max_slots": doc.get("max_slots", 50),
+            "entry_fee": doc.get("entry_fee", 19),
+            "prize_pool": doc.get("prize_pool", 349),
+            "slots_total": total_slots,
+            "max_slots": total_slots,
             "slots_booked": doc.get("slots_booked", 0),
             "match_time": doc.get("match_time", ""),
             "status": doc.get("status", "UPCOMING"),
+            "room_id": doc.get("room_id", "TBD"),
+            "room_password": doc.get("room_password", "TBD"),
             "is_registered": user_registration is not None,
             "my_slot": user_registration.get("slot_number") if user_registration else None
         })
-    return {"tournaments": tournaments}
+    return {"status": "success", "tournaments": tournaments}
 
 @app.post("/api/tournament/register")
 def register_tournament_slot(reg: TournamentRegistration):
@@ -332,31 +371,26 @@ def register_tournament_slot(reg: TournamentRegistration):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid ID format.")
 
-    # 1. User profile se data fetch karo
     user = users_collection.find_one({"_id": u_oid})
     if not user:
         raise HTTPException(status_code=404, detail="Player profile nahi mili!")
 
-    # 2. Check tournament & slot availability
     tourney = tournaments_collection.find_one({"_id": t_oid})
     if not tourney:
         raise HTTPException(status_code=404, detail="Tournament nahi mila!")
 
     slots_booked = tourney.get("slots_booked", 0)
-    slots_total = tourney.get("max_slots", 50)
+    slots_total = tourney.get("slots_total") or tourney.get("max_slots") or 48
 
     if slots_booked >= slots_total:
         raise HTTPException(status_code=400, detail="Lobby full ho chuki hai!")
 
-    # Duplicate check
     for participant in tourney.get("registered_teams", []):
         if participant.get("user_id") == str(u_oid):
             raise HTTPException(status_code=400, detail="Aap pehle se is match me register hain!")
 
-    # 3. Next slot calculate
-    allotted_slot = slots_booked + 1
+    allotted_slot = reg.slot_number if reg.slot_number else (slots_booked + 1)
 
-    # 4. Bind snapshot
     slot_entry = {
         "slot_number": allotted_slot,
         "user_id": str(u_oid),
@@ -365,10 +399,10 @@ def register_tournament_slot(reg: TournamentRegistration):
         "game_uid": user.get("game_uid", "Not Set"),
         "payout_upi": user.get("bank_details", {}).get("upi_id", "Not Set"),
         "utr": reg.utr,
+        "verified": True,
         "registered_at": datetime.utcnow().isoformat()
     }
 
-    # 5. Atomic push & increment
     tournaments_collection.update_one(
         {"_id": t_oid},
         {
@@ -384,24 +418,32 @@ def register_tournament_slot(reg: TournamentRegistration):
     }
 
 # ---------------------------------------------------------------------------
-# 5. ROOM CREDENTIALS
+# 5. ROOM CREDENTIALS (ADMIN SET & APP UNLOCK)
 # ---------------------------------------------------------------------------
-@app.post("/api/tournaments/set-room")
-def set_room_credentials(payload: RoomCredentialsUpdate):
+def _process_set_room(payload: RoomCredentialsUpdate):
     try:
         t_oid = ObjectId(payload.tournament_id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid Tournament ID.")
 
-    tournaments_collection.update_one(
+    res = tournaments_collection.update_one(
         {"_id": t_oid},
         {"$set": {
             "room_id": payload.room_id,
             "room_password": payload.room_password,
-            "status": "LIVE"
+            "status": "UNLOCKED"
         }}
     )
-    return {"status": "success", "message": "Room details published."}
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    return {"status": "success", "message": "Room ID & Pass broadcasted to all players!"}
+
+# Supports both POST and PUT for Admin Panel compatibility
+@app.post("/api/tournaments/set-room")
+@app.put("/api/admin/room-credentials")
+def set_room_credentials_endpoint(payload: RoomCredentialsUpdate):
+    return _process_set_room(payload)
 
 @app.get("/api/tournaments/{tournament_id}/room")
 def get_room_details(tournament_id: str, user_id: str):
@@ -414,12 +456,38 @@ def get_room_details(tournament_id: str, user_id: str):
     if not tourney:
         raise HTTPException(status_code=404, detail="Tournament nahi mila!")
 
-    registered = any(team.get("user_id") == user_id for team in tourney.get("registered_teams", []))
+    registered = any(str(team.get("user_id")) == str(user_id) for team in tourney.get("registered_teams", []))
     if not registered:
         return {"status": "locked", "message": "Pehle match register karein tabhi Room ID unlock hogi."}
 
+    room_id = tourney.get("room_id")
+    room_pass = tourney.get("room_password")
+
+    if tourney.get("status") in ["UNLOCKED", "LIVE"] and room_id and room_id != "TBD":
+        return {
+            "status": "unlocked",
+            "room_id": room_id,
+            "room_password": room_pass
+        }
+
     return {
-        "status": "unlocked",
-        "room_id": tourney.get("room_id") or "Not ready",
-        "room_password": tourney.get("room_password") or "Not ready"
+        "status": "locked",
+        "message": "Room password match se 15m pehle show hoga."
     }
+
+# ---------------------------------------------------------------------------
+# 6. ANTI-CHEAT / HACKER REPORT ENDPOINT
+# ---------------------------------------------------------------------------
+@app.post("/api/anti-cheat/report")
+def submit_hacker_report(report: HackerReportCreate):
+    report_doc = {
+        "reporter_id": report.reporter_id,
+        "app_serial_id": report.app_serial_id,
+        "target_uid": report.target_uid,
+        "room_code": report.room_code,
+        "reason": report.reason,
+        "status": "UNDER_REVIEW",
+        "created_at": datetime.utcnow().isoformat()
+    }
+    db["hacker_reports"].insert_one(report_doc)
+    return {"status": "success", "message": "Report logged for hardware review."}
