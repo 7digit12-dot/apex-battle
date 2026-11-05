@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apex Battle • Liquid Glass Esports Command Center</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            apex: {
+              cyan: '#00E5FF',
+              orange: '#FF5722',
+              amber: '#FFB300',
+              emerald: '#10B981',
+              dark: '#050811',
+              card: 'rgba(13, 20, 36, 0.72)',
+              glassBorder: 'rgba(255, 255, 255, 0.12)'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #050811;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(0, 229, 255, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(255, 87, 34, 0.15) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+      background-attachment: fixed;
+      font-family: 'Inter', sans-serif;
+      color: #F8FAFC;
+    }
+
+    .liquid-glass {
+      background: rgba(13, 20, 36, 0.65);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.45), inset 0 1px 1px 0 rgba(255, 255, 255, 0.15);
+    }
+
+    .liquid-glass-subtle {
+      background: rgba(8, 13, 26, 0.55);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .liquid-glass-input {
+      background: rgba(4, 7, 16, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      transition: all 0.2s ease;
+    }
+    .liquid-glass-input:focus {
+      outline: none;
+      border-color: #00E5FF;
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.35);
+    }
+
+    .neon-glow-cyan {
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.35);
+    }
+    .neon-glow-orange {
+      box-shadow: 0 0 20px rgba(255, 87, 34, 0.35);
+    }
+
+    .modal-enter {
+      animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes modalPop {
+      0% { opacity: 0; transform: scale(0.94) translateY(8px); }
+      100% { opacity: 1; transform: scale(1) translateY(0); }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-apex-cyan selection:text-black">
+
+  <div class="fixed top-[-10%] right-[-5%] w-[450px] h-[450px] rounded-full bg-apex-orange/15 blur-[120px] pointer-events-none -z-10"></div>
+  <div class="fixed bottom-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full bg-apex-cyan/15 blur-[140px] pointer-events-none -z-10"></div>
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="sticky top-0 z-40 liquid-glass border-b border-white/10 px-4 md:px-8 py-3.5 flex items-center justify-between">
+    <div class="flex items-center space-x-3.5">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-apex-cyan to-blue-600 flex items-center justify-center neon-glow-cyan shadow-lg">
+        <i data-lucide="zap" class="w-5 h-5 text-black stroke-[2.5]"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="font-mono font-black text-lg tracking-widest text-apex-cyan">APEX BATTLE</span>
+          <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-apex-orange/20 border border-apex-orange/50 text-apex-orange">COMMAND HQ</span>
+        </div>
+        <div class="flex items-center space-x-1.5 text-xs text-slate-400 font-medium">
+          <span class="w-2 h-2 rounded-full bg-apex-emerald animate-pulse"></span>
+          <span>Server Cluster: <strong class="text-slate-200">Render-Atlas-Live</strong></span>
+          <span class="text-white/20">•</span>
+          <span id="liveClock" class="font-mono text-slate-300">--:--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-3 md:space-x-4">
+      <!-- Create Match Button -->
+      <button onclick="openCreateMatchModal()" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-apex-orange to-amber-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md neon-glow-orange hover:opacity-95 transition">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i>
+        <span>Create Match</span>
+      </button>
+
+      <!-- Quick Server Sync Button -->
+      <button onclick="triggerSync()" title="Refresh live pools" class="liquid-glass-subtle hover:border-apex-cyan text-slate-200 p-2.5 rounded-xl transition flex items-center gap-2 text-xs font-semibold">
+        <i data-lucide="refresh-cw" id="syncIcon" class="w-4 h-4 text-apex-cyan"></i>
+        <span class="hidden md:inline">Sync Data</span>
+      </button>
+
+      <!-- Admin Identity Chip -->
+      <div class="liquid-glass-subtle px-3 py-1.5 rounded-xl border border-white/10 flex items-center space-x-2.5">
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-apex-orange to-amber-500 flex items-center justify-center font-bold text-xs shadow">
+          AD
+        </div>
+        <div class="hidden sm:block text-left">
+          <p class="text-xs font-bold leading-tight text-white">Master Admin</p>
+          <p class="text-[10px] font-mono text-apex-cyan">ROOT PRIVILEGES</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-6">
+
+    <!-- 1. Real-time Daily Summary Cards -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5 md:gap-5">
+      <div class="liquid-glass p-4 md:p-5 rounded-2xl relative overflow-hidden group hover:border-apex-cyan/50 transition">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Collection</p>
+          <div class="p-2 rounded-xl bg-apex-cyan/10 text-apex-cyan border border-apex-cyan/20">
+            <i data-lucide="banknote" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <h3 id="statTotalCollected" class="text-2xl md:text-3xl font-black font-mono text-white mt-2">₹0</h3>
+        <p class="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+          <span class="text-apex-emerald font-semibold">Live Pool</span> via Registrations
+        </p>
+      </div>
+
+      <div class="liquid-glass p-4 md:p-5 rounded-2xl relative overflow-hidden group hover:border-apex-orange/50 transition">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Matches</p>
+          <div class="p-2 rounded-xl bg-apex-orange/10 text-apex-orange border border-apex-orange/20">
+            <i data-lucide="swords" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <h3 id="statActiveMatches" class="text-2xl md:text-3xl font-black font-mono text-white mt-2">0</h3>
+        <p class="text-[11px] text-slate-400 mt-1">Live Lobbies in DB</p>
+      </div>
+
+      <div class="liquid-glass p-4 md:p-5 rounded-2xl relative overflow-hidden group hover:border-apex-emerald/50 transition">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Net Host Profit</p>
+          <div class="p-2 rounded-xl bg-apex-emerald/10 text-apex-emerald border border-apex-emerald/20">
+            <i data-lucide="wallet" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <h3 id="statNetProfit" class="text-2xl md:text-3xl font-black font-mono text-apex-emerald mt-2">₹0</h3>
+        <p class="text-[11px] text-slate-400 mt-1">~31% Host Margins</p>
+      </div>
+
+      <div class="liquid-glass p-4 md:p-5 rounded-2xl relative overflow-hidden group hover:border-amber-400/50 transition">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Booked Slots</p>
+          <div class="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <i data-lucide="users" class="w-4 h-4"></i>
+          </div>
+        </div>
+        <h3 id="statActiveSlots" class="text-2xl md:text-3xl font-black font-mono text-amber-400 mt-2">0</h3>
+        <p class="text-[11px] text-slate-400 mt-1">
+          <span id="statPendingUtrCount" class="text-apex-orange font-bold font-mono">0 Pending</span> Verifications
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. Interactive Navigation Tabs -->
+    <div class="liquid-glass p-1.5 rounded-2xl flex items-center space-x-1 overflow-x-auto border border-white/10 text-xs font-bold">
+      <button onclick="switchTab('matches')" id="tabBtn-matches" class="tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 bg-gradient-to-r from-apex-orange to-amber-600 text-white shadow-md">
+        <i data-lucide="swords" class="w-4 h-4"></i>
+        <span>Live Matches (Database)</span>
+      </button>
+
+      <button onclick="switchTab('queue')" id="tabBtn-queue" class="tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-white/5">
+        <i data-lucide="shield-check" class="w-4 h-4"></i>
+        <span>UTR Verifications</span>
+        <span id="badgeQueueCount" class="px-1.5 py-0.5 rounded-md text-[10px] bg-apex-orange text-white">0</span>
+      </button>
+
+      <button onclick="switchTab('payouts')" id="tabBtn-payouts" class="tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-white/5">
+        <i data-lucide="receipt" class="w-4 h-4"></i>
+        <span>Booyah Proof & Payouts</span>
+      </button>
+
+      <button onclick="switchTab('reports')" id="tabBtn-reports" class="tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-white/5">
+        <i data-lucide="user-x" class="w-4 h-4"></i>
+        <span>Anti-Cheat / Hacker Reports</span>
+      </button>
+    </div>
+
+    <!-- ================= TAB 1: MATCHES SCHEDULER & ROOM MANAGER ================= -->
+    <section id="tab-matches" class="tab-content space-y-4">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-black text-white flex items-center gap-2">
+            <span>Database Lobbies Schedule</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-apex-cyan/15 text-apex-cyan border border-apex-cyan/30">MongoDB Live</span>
+          </h2>
+          <p class="text-xs text-slate-400">Manage Room ID, Password, and match status in real-time.</p>
+        </div>
+
+        <div class="flex items-center space-x-1.5 text-xs">
+          <button onclick="filterMatches('ALL')" class="match-filter-btn px-3 py-1.5 rounded-xl bg-white/10 text-white font-semibold">All</button>
+          <button onclick="filterMatches('SOLO')" class="match-filter-btn px-3 py-1.5 rounded-xl text-slate-400 hover:text-white font-semibold">Solo</button>
+          <button onclick="filterMatches('SQUAD')" class="match-filter-btn px-3 py-1.5 rounded-xl text-slate-400 hover:text-white font-semibold">Squad</button>
+          <button onclick="filterMatches('CS')" class="match-filter-btn px-3 py-1.5 rounded-xl text-slate-400 hover:text-white font-semibold">Clash Squad</button>
+        </div>
+      </div>
+
+      <div class="liquid-glass rounded-2xl overflow-hidden border border-white/10">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-black/40 text-slate-400 uppercase text-[10px] tracking-wider border-b border-white/10">
+              <tr>
+                <th class="py-3.5 px-4 font-mono">Room Code</th>
+                <th class="py-3.5 px-4">Title & Tier</th>
+                <th class="py-3.5 px-4">Kickoff</th>
+                <th class="py-3.5 px-4">Fee / 1st Prize</th>
+                <th class="py-3.5 px-4">Filled Slots</th>
+                <th class="py-3.5 px-4">Room ID & Pass</th>
+                <th class="py-3.5 px-4">Action</th>
+              </tr>
+            </thead>
+            <tbody id="matchesTableBody" class="divide-y divide-white/5 font-medium">
+              <!-- Dynamically populated via API -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 2: UTR REGISTRATION QUEUE ================= -->
+    <section id="tab-queue" class="tab-content hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-black text-white flex items-center gap-2">
+            <span>UTR Player Verification Queue</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-apex-orange/15 text-apex-orange border border-apex-orange/30">Action Required</span>
+          </h2>
+          <p class="text-xs text-slate-400">Match 12-digit UTR reference with bank transfer and approve slot.</p>
+        </div>
+      </div>
+
+      <div class="liquid-glass rounded-2xl overflow-hidden border border-white/10">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-black/40 text-slate-400 uppercase text-[10px] tracking-wider border-b border-white/10">
+              <tr>
+                <th class="py-3.5 px-4">Player Tag</th>
+                <th class="py-3.5 px-4 font-mono">Free Fire UID</th>
+                <th class="py-3.5 px-4">Target Room</th>
+                <th class="py-3.5 px-4 font-mono">12-Digit UTR</th>
+                <th class="py-3.5 px-4">Status</th>
+                <th class="py-3.5 px-4 text-right">Decision</th>
+              </tr>
+            </thead>
+            <tbody id="queueTableBody" class="divide-y divide-white/5 font-medium">
+              <!-- Populated via API -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 3: WINNER PROOF & PAYOUTS ================= -->
+    <section id="tab-payouts" class="tab-content hidden space-y-4">
+      <div>
+        <h2 class="text-lg font-black text-white flex items-center gap-2">
+          <span>Booyah Proof & Instant Prize Payouts</span>
+        </h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="payoutCardsContainer"></div>
+    </section>
+
+    <!-- ================= TAB 4: ANTI-CHEAT HACKER REPORTS ================= -->
+    <section id="tab-reports" class="tab-content hidden space-y-4">
+      <div>
+        <h2 class="text-lg font-black text-white flex items-center gap-2">
+          <span>Anti-Cheat & Teaming Incident Reports</span>
+        </h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="hackerReportsContainer"></div>
+    </section>
+
+  </main>
+
+  <!-- ================= EDIT ROOM CREDENTIALS MODAL ================= -->
+  <div id="roomModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden">
+    <div class="liquid-glass border border-white/20 p-6 rounded-3xl max-w-md w-full modal-enter space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-white/10">
+        <div class="flex items-center space-x-2.5">
+          <div class="p-2 rounded-xl bg-apex-cyan/15 text-apex-cyan border border-apex-cyan/30">
+            <i data-lucide="key" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-base text-white" id="modalRoomTitle">Room Configuration</h3>
+            <p class="text-xs text-slate-400" id="modalRoomSub">Apex Custom Match</p>
+          </div>
+        </div>
+        <button onclick="closeRoomModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3.5 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Free Fire Custom Room ID</label>
+          <input type="text" id="modalRoomIdInput" placeholder="e.g. 8491024" class="w-full liquid-glass-input rounded-xl px-3.5 py-2.5 text-sm font-mono text-apex-cyan font-bold">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Room Password</label>
+          <input type="text" id="modalRoomPassInput" placeholder="e.g. 7789" class="w-full liquid-glass-input rounded-xl px-3.5 py-2.5 text-sm font-mono text-amber-400 font-bold">
+        </div>
+      </div>
+
+      <div class="pt-2 flex items-center justify-end space-x-2.5">
+        <button onclick="closeRoomModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">Cancel</button>
+        <button onclick="saveRoomConfig()" class="px-5 py-2.5 rounded-xl text-xs font-black bg-gradient-to-r from-apex-cyan to-blue-600 text-black hover:opacity-95 transition shadow-lg neon-glow-cyan">SAVE & BROADCAST</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CREATE TOURNAMENT MODAL ================= -->
+  <div id="createMatchModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md hidden">
+    <div class="liquid-glass border border-white/20 p-6 rounded-3xl max-w-md w-full modal-enter space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-white/10">
+        <h3 class="font-black text-base text-white flex items-center gap-2">
+          <i data-lucide="plus-circle" class="w-5 h-5 text-apex-orange"></i>
+          <span>Create New Tournament Slot</span>
+        </h3>
+        <button onclick="closeCreateMatchModal()" class="text-slate-400 hover:text-white p-1">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Match Title</label>
+          <input type="text" id="createTitle" placeholder="e.g. Apex Solo War" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white font-medium">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">Mode</label>
+            <select id="createMode" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white bg-slate-900 font-bold">
+              <option value="SOLO">SOLO (48 Slots)</option>
+              <option value="DUO">DUO (24 Slots)</option>
+              <option value="SQUAD">SQUAD (12 Slots)</option>
+              <option value="CS">CS (8 Slots)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">Room Code</label>
+            <input type="text" id="createRoomCode" placeholder="ROOM-101" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white font-mono uppercase font-bold">
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">Entry Fee (₹)</label>
+            <input type="number" id="createFee" placeholder="19" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white font-mono">
+          </div>
+          <div>
+            <label class="block text-slate-300 font-semibold mb-1">1st Prize (₹)</label>
+            <input type="number" id="createPrize" placeholder="349" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white font-mono text-apex-cyan font-bold">
+          </div>
+        </div>
+        <div>
+          <label class="block text-slate-300 font-semibold mb-1">Match Start Time</label>
+          <input type="datetime-local" id="createTime" class="w-full liquid-glass-input rounded-xl px-3 py-2 text-white font-mono">
+        </div>
+      </div>
+
+      <div class="pt-2 flex items-center justify-end space-x-2.5">
+        <button onclick="closeCreateMatchModal()" class="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="submitNewTournament()" class="px-5 py-2.5 rounded-xl text-xs font-black bg-apex-orange text-white hover:opacity-95 shadow-lg">CREATE LOBBY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= INLINE TOAST SYSTEM ================= -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 liquid-glass border border-white/20 px-4 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+    <div id="toastIcon" class="w-6 h-6 rounded-full bg-apex-emerald/20 text-apex-emerald flex items-center justify-center">
+      <i data-lucide="check" class="w-3.5 h-3.5"></i>
+    </div>
+    <div>
+      <p id="toastTitle" class="text-xs font-bold text-white leading-tight">Notification</p>
+      <p id="toastMsg" class="text-[11px] text-slate-300">Action updated successfully</p>
+    </div>
+  </div>
+
+  <!-- ================= REAL BACKEND CONNECTED SCRIPT ================= -->
+  <script>
+    const API_BASE = "https://apex-battle.onrender.com/api";
+
+    let matches = [];
+    let utrQueue = [];
+    let currentEditingMatchId = null;
+    let activeMatchFilter = "ALL";
+
+    // --- 1. FETCH MATCHES FROM BACKEND ---
+    async function loadMatchesFromBackend() {
+      try {
+        const res = await fetch(`${API_BASE}/tournaments`);
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.tournaments)) {
+          matches = data.tournaments.map(t => ({
+            id: t.id,
+            roomCode: t.room_code || 'ROOM-101',
+            title: t.title || 'Apex Match',
+            mode: t.mode || 'SOLO',
+            fee: t.entry_fee || 19,
+            prize: t.prize_pool || 349,
+            startTime: new Date(t.match_time),
+            totalSlots: t.slots_total || 48,
+            bookedSlots: t.slots_booked || 0,
+            roomId: t.room_id || 'TBD',
+            roomPass: t.room_password || 'TBD',
+            status: t.status || 'UPCOMING'
+          }));
+
+          renderMatches();
+          updateLiveStats();
+        }
+      } catch (err) {
+        console.error("Backend fetch error:", err);
+      }
+    }
+
+    function updateLiveStats() {
+      let totalCollected = 0;
+      let totalBooked = 0;
+
+      matches.forEach(m => {
+        totalCollected += (m.bookedSlots * m.fee);
+        totalBooked += m.bookedSlots;
+      });
+
+      document.getElementById('statTotalCollected').textContent = `₹${totalCollected}`;
+      document.getElementById('statActiveMatches').textContent = matches.length;
+      document.getElementById('statActiveSlots').textContent = totalBooked;
+      document.getElementById('statNetProfit').textContent = `₹${Math.round(totalCollected * 0.31)}`;
+    }
+
+    function renderMatches() {
+      const tbody = document.getElementById('matchesTableBody');
+      const filtered = matches.filter(m => activeMatchFilter === 'ALL' || m.mode === activeMatchFilter);
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-slate-400 text-xs">No lobbies found. Click "Create Match" to add one!</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(m => {
+        return `
+          <tr class="hover:bg-white/[0.02] transition">
+            <td class="py-3.5 px-4 font-mono font-bold text-apex-cyan">${m.roomCode}</td>
+            <td class="py-3.5 px-4">
+              <p class="font-bold text-white">${m.title}</p>
+              <span class="text-[10px] text-slate-400 font-mono">${m.mode}</span>
+            </td>
+            <td class="py-3.5 px-4">
+              <p class="text-slate-200">${m.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+              <p class="text-[10px] text-slate-400">${m.status}</p>
+            </td>
+            <td class="py-3.5 px-4">
+              <p class="font-bold text-white">₹${m.fee}</p>
+              <p class="text-[10px] text-apex-cyan font-bold font-mono">1st: ₹${m.prize}</p>
+            </td>
+            <td class="py-3.5 px-4 font-mono text-xs text-slate-200">
+              ${m.bookedSlots} / ${m.totalSlots} Booked
+            </td>
+            <td class="py-3.5 px-4 font-mono">
+              <p class="text-xs text-white">ID: <span class="text-apex-cyan font-bold">${m.roomId}</span></p>
+              <p class="text-[11px] text-slate-400">Pass: <span class="text-amber-400 font-bold">${m.roomPass}</span></p>
+            </td>
+            <td class="py-3.5 px-4">
+              <button onclick="openRoomModal('${m.id}')" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-apex-cyan hover:text-black transition text-xs font-bold text-slate-200 flex items-center gap-1">
+                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                <span>Set Pass</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    // --- 2. BROADCAST CREDENTIALS TO BACKEND ---
+    function openRoomModal(matchId) {
+      const match = matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      currentEditingMatchId = matchId;
+      document.getElementById('modalRoomTitle').textContent = `${match.roomCode} Config`;
+      document.getElementById('modalRoomSub').textContent = match.title;
+      document.getElementById('modalRoomIdInput').value = match.roomId === "TBD" ? "" : match.roomId;
+      document.getElementById('modalRoomPassInput').value = match.roomPass === "TBD" ? "" : match.roomPass;
+
+      document.getElementById('roomModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeRoomModal() {
+      document.getElementById('roomModal').classList.add('hidden');
+      currentEditingMatchId = null;
+    }
+
+    async function saveRoomConfig() {
+      if (!currentEditingMatchId) return;
+
+      const newId = document.getElementById('modalRoomIdInput').value.trim();
+      const newPass = document.getElementById('modalRoomPassInput').value.trim();
+
+      if (!newId || !newPass) {
+        alert("Free Fire Room ID aur Password dono enter karein!");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/admin/room-credentials`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tournament_id: currentEditingMatchId,
+            room_id: newId,
+            room_password: newPass
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          closeRoomModal();
+          showToast("Broadcast Success!", "Room ID & Pass app ke liye live ho gaye.");
+          loadMatchesFromBackend();
+        } else {
+          alert("Server Error: " + (data.detail || "Update failed"));
+        }
+      } catch (err) {
+        alert("Network Error: Backend se connect nahi ho paya.");
+      }
+    }
+
+    // --- 3. CREATE MATCH MODAL & API ---
+    function openCreateMatchModal() {
+      document.getElementById('createMatchModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeCreateMatchModal() {
+      document.getElementById('createMatchModal').classList.add('hidden');
+    }
+
+    async function submitNewTournament() {
+      const title = document.getElementById('createTitle').value.trim();
+      const mode = document.getElementById('createMode').value;
+      const roomCode = document.getElementById('createRoomCode').value.trim();
+      const fee = parseInt(document.getElementById('createFee').value) || 19;
+      const prize = parseInt(document.getElementById('createPrize').value) || 349;
+      const matchTime = document.getElementById('createTime').value;
+
+      if (!title || !roomCode || !matchTime) {
+        alert("Title, Room Code aur Time zaroori hain!");
+        return;
+      }
+
+      const payload = {
+        title: title,
+        mode: mode,
+        entry_fee: fee,
+        prize_pool: prize,
+        match_time: new Date(matchTime).toISOString(),
+        room_code: roomCode
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/admin/tournament/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          closeCreateMatchModal();
+          showToast("Match Created", `${roomCode} successfully database me add ho gaya.`);
+          loadMatchesFromBackend();
+        } else {
+          const err = await res.json();
+          alert("Create Failed: " + err.detail);
+        }
+      } catch (e) {
+        alert("Network Error: Backend unreachable");
+      }
+    }
+
+    // --- 4. TABS & SYNC ---
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`tab-${tabName}`).classList.remove('hidden');
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.className = "tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 text-slate-400 hover:text-white hover:bg-white/5";
+      });
+
+      const activeBtn = document.getElementById(`tabBtn-${tabName}`);
+      activeBtn.className = "tab-btn px-4 py-2.5 rounded-xl transition flex items-center space-x-2 bg-gradient-to-r from-apex-orange to-amber-600 text-white shadow-md";
+      lucide.createIcons();
+    }
+
+    function filterMatches(tier) {
+      activeMatchFilter = tier;
+      document.querySelectorAll('.match-filter-btn').forEach(btn => {
+        btn.className = "match-filter-btn px-3 py-1.5 rounded-xl text-slate-400 hover:text-white font-semibold";
+      });
+      event.target.className = "match-filter-btn px-3 py-1.5 rounded-xl bg-white/10 text-white font-semibold";
+      renderMatches();
+    }
+
+    function triggerSync() {
+      const icon = document.getElementById('syncIcon');
+      icon.classList.add('animate-spin');
+      loadMatchesFromBackend().then(() => {
+        setTimeout(() => icon.classList.remove('animate-spin'), 600);
+        showToast("Synchronized", "Live MongoDB Atlas pools loaded.");
+      });
+    }
+
+    function showToast(title, msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastTitle').textContent = title;
+      document.getElementById('toastMsg').textContent = msg;
+
+      toast.classList.remove('opacity-0', 'translate-y-24');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-24');
+      }, 3500);
+    }
+
+    setInterval(() => {
+      document.getElementById('liveClock').textContent = new Date().toLocaleTimeString();
+    }, 1000);
+
+    // Initial Load
+    loadMatchesFromBackend();
+    lucide.createIcons();
+  </script>
+</body>
+</html>
