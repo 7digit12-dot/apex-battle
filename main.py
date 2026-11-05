@@ -1,5 +1,7 @@
+import os
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from datetime import datetime
@@ -69,7 +71,7 @@ class TournamentRegistration(BaseModel):
     slot_number: Optional[int] = None
 
 class RoomCredentialsUpdate(BaseModel):
-    tournament_id: str
+    tournament_id: Optional[str] = None
     room_id: str
     room_password: str
 
@@ -81,11 +83,22 @@ class HackerReportCreate(BaseModel):
     reason: str = ""
 
 # ---------------------------------------------------------------------------
-# 2. CORE & HEALTH ENDPOINTS
+# 2. CORE, HEALTH & ADMIN DASHBOARD HOSTING
 # ---------------------------------------------------------------------------
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "Apex Battle Tournament API is Running!"}
+
+@app.get("/admin", response_class=HTMLResponse)
+async def serve_admin_panel():
+    file_path = os.path.join(os.path.dirname(__file__), "admin.html")
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    return HTMLResponse(
+        content="<h2>admin.html file nahi mili! File ko main.py ke bagal me rakhein.</h2>",
+        status_code=404
+    )
 
 @app.get("/api/test-db")
 def test_db():
@@ -165,7 +178,6 @@ def google_auth(payload: GoogleAuthRequest):
             raise HTTPException(status_code=400, detail="UID aur Password dono compulsory hain!")
 
         user_name = payload.username or user_email.split("@")[0]
-
         user = users_collection.find_one({"email": user_email})
 
         if not user:
@@ -320,8 +332,9 @@ def _process_create_tournament(tourney: TournamentCreate):
     res = tournaments_collection.insert_one(record)
     return {"status": "success", "tournament_id": str(res.inserted_id), "id": str(res.inserted_id)}
 
-# Supports both /api/tournaments/create and /api/admin/tournament/create
+# Supports /api/tournaments/create, /api/tournament/create & /api/admin/tournament/create
 @app.post("/api/tournaments/create")
+@app.post("/api/tournament/create")
 @app.post("/api/admin/tournament/create")
 def create_tournament_endpoint(tourney: TournamentCreate):
     return _process_create_tournament(tourney)
@@ -354,6 +367,7 @@ def get_all_tournaments(user_id: str | None = Query(None)):
             "slots_total": total_slots,
             "max_slots": total_slots,
             "slots_booked": doc.get("slots_booked", 0),
+            "registered_teams": doc.get("registered_teams", []),
             "match_time": doc.get("match_time", ""),
             "status": doc.get("status", "UPCOMING"),
             "room_id": doc.get("room_id", "TBD"),
@@ -420,17 +434,17 @@ def register_tournament_slot(reg: TournamentRegistration):
 # ---------------------------------------------------------------------------
 # 5. ROOM CREDENTIALS (ADMIN SET & APP UNLOCK)
 # ---------------------------------------------------------------------------
-def _process_set_room(payload: RoomCredentialsUpdate):
+def _process_set_room(t_id_str: str, room_id: str, room_password: str):
     try:
-        t_oid = ObjectId(payload.tournament_id)
+        t_oid = ObjectId(t_id_str)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid Tournament ID.")
 
     res = tournaments_collection.update_one(
         {"_id": t_oid},
         {"$set": {
-            "room_id": payload.room_id,
-            "room_password": payload.room_password,
+            "room_id": room_id,
+            "room_password": room_password,
             "status": "UNLOCKED"
         }}
     )
@@ -439,11 +453,16 @@ def _process_set_room(payload: RoomCredentialsUpdate):
 
     return {"status": "success", "message": "Room ID & Pass broadcasted to all players!"}
 
-# Supports both POST and PUT for Admin Panel compatibility
 @app.post("/api/tournaments/set-room")
 @app.put("/api/admin/room-credentials")
 def set_room_credentials_endpoint(payload: RoomCredentialsUpdate):
-    return _process_set_room(payload)
+    if not payload.tournament_id:
+        raise HTTPException(status_code=400, detail="Tournament ID is required.")
+    return _process_set_room(payload.tournament_id, payload.room_id, payload.room_password)
+
+@app.post("/api/tournament/{tournament_id}/room")
+def set_room_by_path(tournament_id: str, payload: RoomCredentialsUpdate):
+    return _process_set_room(tournament_id, payload.room_id, payload.room_password)
 
 @app.get("/api/tournaments/{tournament_id}/room")
 def get_room_details(tournament_id: str, user_id: str):
