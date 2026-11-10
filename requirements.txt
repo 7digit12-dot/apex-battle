@@ -3,3 +3,4 @@ uvicorn
 pymongo[srv]
 pydantic
 certifi
+firebase-admin
