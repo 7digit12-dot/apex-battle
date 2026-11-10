@@ -1,4 +1,7 @@
 import os
+import json
+import firebase_admin
+from firebase_admin import credentials, messaging
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -9,6 +12,45 @@ from typing import Optional
 
 # Local database import
 from database import db, users_collection, tournaments_collection
+
+# ---------------------------------------------------------------------------
+# FIREBASE ADMIN SDK INITIALIZATION (LOCAL + RENDER SAFE)
+# ---------------------------------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+cred_path = os.path.join(BASE_DIR, "firebase_key.json")
+
+if not firebase_admin._apps:
+    try:
+        if os.getenv("FIREBASE_CREDENTIALS_JSON"):
+            cred_dict = json.loads(os.getenv("FIREBASE_CREDENTIALS_JSON"))
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+        elif os.path.exists(cred_path):
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+        else:
+            print("[Warning] Firebase credentials not found! Push notifications disabled.")
+    except Exception as e:
+        print(f"[Firebase Init Error]: {e}")
+
+def send_push_notification(title: str, body: str, topic: str = "all_users"):
+    """Global topic-based push notification."""
+    try:
+        if not firebase_admin._apps:
+            return False
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
+            topic=topic,
+        )
+        response = messaging.send(message)
+        print(f"[FCM Success] Sent message: {response}")
+        return True
+    except Exception as e:
+        print(f"[FCM Error]: {e}")
+        return False
 
 app = FastAPI(title="Apex Battle Esports API")
 
@@ -330,6 +372,14 @@ def _process_create_tournament(tourney: TournamentCreate):
         "created_at": datetime.utcnow().isoformat()
     }
     res = tournaments_collection.insert_one(record)
+    
+    # Broadcast new match created to all players
+    send_push_notification(
+        title="New Match Live! 🔥",
+        body=f"{tourney.title} ({mode_val}) is now open for registration. Join now!",
+        topic="all_users"
+    )
+
     return {"status": "success", "tournament_id": str(res.inserted_id), "id": str(res.inserted_id)}
 
 # Supports /api/tournaments/create, /api/tournament/create & /api/admin/tournament/create
@@ -450,6 +500,13 @@ def _process_set_room(t_id_str: str, room_id: str, room_password: str):
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Match not found")
+
+    # Match room unlock notification to all players
+    send_push_notification(
+        title="Room Details Unlocked! 🎮",
+        body=f"Room ID: {room_id} | Pass: {room_password}. Join custom room immediately!",
+        topic="all_users"
+    )
 
     return {"status": "success", "message": "Room ID & Pass broadcasted to all players!"}
 
